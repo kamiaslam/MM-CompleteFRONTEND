@@ -1,0 +1,5 @@
+.alignment-in-column {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}

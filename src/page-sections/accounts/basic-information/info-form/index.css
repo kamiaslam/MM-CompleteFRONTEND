@@ -1,0 +1,11 @@
+.custom-dropdown .country {
+  color: var(--dropdown-text-color);
+}
+
+:root {
+  --dropdown-text-color: #000; /* Light mode */
+}
+
+[data-theme="dark"] {
+  --dropdown-text-color: #fff; /* Dark mode */
+}

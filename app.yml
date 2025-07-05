@@ -1,0 +1,5 @@
+apps:
+  - name: mind-meta-ai
+    restart_delay: 100
+    script: npm run start
+    autorestart: true

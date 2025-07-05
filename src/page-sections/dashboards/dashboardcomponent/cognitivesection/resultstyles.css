@@ -1,0 +1,36 @@
+.resultssection-main .css-irhjat {
+  margin: 0 !important;
+  padding: 16px 0;
+  border-bottom: 1px dotted #e5e7eb;
+}
+
+.resultssection-main h6 {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 27px;
+  text-align: left;
+}
+
+.resultssection-main p {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+  text-align: left;
+}
+
+
+.resultssection-main .progress-wrapper {
+    width: 100%;
+    flex-grow: inherit;
+}
+
+.resultssection-main .progressdiv-results {
+  display: flex;
+  justify-content: end;
+  align-items: center;
+  width: 100%;
+}
+
+.resultssection-main .css-18ge5tp {
+  width: 100%;
+}

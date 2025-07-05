@@ -1,0 +1,98 @@
+@font-face {
+  font-family: "SpaceGrotesk";
+  src: url("../public/fonts/SpaceGrotesk-Light.ttf") format("truetype");
+  font-weight: 300;
+  font-style: normal;
+}
+@font-face {
+  font-family: "SpaceGrotesk";
+  src: url("../public/fonts/SpaceGrotesk-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "SpaceGrotesk";
+  src: url("../public/fonts/SpaceGrotesk-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: "SpaceGrotesk";
+  src: url("../public/fonts/SpaceGrotesk-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+}
+@font-face {
+  font-family: "SpaceGrotesk";
+  src: url("../public/fonts/SpaceGrotesk-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+body {
+  font-family: "SpaceGrotesk";
+}
+.VIpgJd-ZVi9od-ORHb-OEVmcd {
+  display: none;
+  /* width: 100% !important;
+  height: 100% !important; */
+}
+
+/* Adding more specificity */
+div.VIpgJd-ZVi9od-vH1Gmf {
+  width: 500px !important;
+  height: 500px !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+/* .VIpgJd-ZVi9od-xl07Ob-OEVmcd {
+  width: 500px !important;
+  height: 500px !important;
+  overflow-y: auto !important;
+  display: block !important;
+  right: 
+  
+  .call-layout-main {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;0 !important;
+  left: auto !important;
+}
+
+.VIpgJd-ZVi9od-vH1Gmf table {
+  width: 100% !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+#\:1\.menuBody {
+  width: 100% !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+} */
+.css-m4ajfc-menu {
+  z-index: 99999 !important;
+}
+
+.call-layout-main {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 99999;
+  background: #f12a8133;
+  backdrop-filter: blur(3px);
+  padding: 20px;
+}
+
+.call-layout-main .call-layout-bg {
+  background-color: #f12a81;
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+}

@@ -1,0 +1,1 @@
+export { default as CallTestPageView } from './Call-test';

@@ -1,0 +1,30 @@
+.loader-main-light {
+  background: #000000a3 !important;
+}
+.loader-main-dark {
+  background: #00000085 !important;
+}
+
+/* HTML: <div class="loader"></div> */
+.loader {
+  width: 80px;
+  aspect-ratio: 1;
+  border: 10px solid transparent;
+  box-sizing: border-box;
+  background: 
+    radial-gradient(farthest-side, #ff69b4 98%, transparent) top,
+    radial-gradient(farthest-side, #ff69b4 98%, transparent) top,
+    radial-gradient(farthest-side, #ff69b4 98%, transparent) left,
+    radial-gradient(farthest-side, #ff69b4 98%, transparent) right,
+    radial-gradient(farthest-side, #ff69b4 98%, transparent) bottom;
+  background-size: 20px 20px;
+  background-repeat: no-repeat;
+  animation: l19 2s infinite;
+}
+@keyframes l19 {
+  0%   {background-position: top, top, left, right, bottom;}
+  25%  {background-position: right, top, left, right, bottom;}
+  50%  {background-position: bottom, top, left, right, bottom;}
+  75%  {background-position: left, top, left, right, bottom;}
+  100% {background-position: top, top, left, right, bottom;}
+}
