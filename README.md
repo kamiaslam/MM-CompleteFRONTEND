@@ -1,4 +1,4 @@
-# Essence Admin Dashboard & UI Kits
+# Mind Meta Ai Admin Dashboard 
 
 ## Install dependencies
 
