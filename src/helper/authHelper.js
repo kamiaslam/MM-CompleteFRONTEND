@@ -126,7 +126,7 @@ export const checkToken = async () => {
     if (timeStamp <= expTime) {
       try {
         const res = await axios.get(
-          import.meta.env.VITE_API_URL + "auth/refresh-token",
+          import.meta.env.VITE_API_URL + "/auth/refresh-token",
           {
             headers: refreshAuthHeader(),
           }
