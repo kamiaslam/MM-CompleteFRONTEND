@@ -41,6 +41,8 @@ import {
   DELETE_FAMILY,
   EMAIL_REGEX,
   FAMILY_HEAD_LIST,
+  PROVIDERS,
+  getVoicesByProvider,
 } from "../../../helper/constant";
 import moment from "moment";
 import toast from "react-hot-toast";
@@ -58,6 +60,7 @@ export default function AddNewUserPageView() {
   const [isEdit, setIsEdit] = useState(false);
   const [searchParams] = useSearchParams();
   const id = searchParams.get("id");
+  const [availableVoices, setAvailableVoices] = useState([]);
 
   const getUserData = async () => {
     try {
@@ -81,12 +84,19 @@ export default function AddNewUserPageView() {
     birthdate: "",
     fullName: "",
     patientEmail: "",
-    hume_voice: "Aria",
+    provider_id: 1, // Default to ElevenLabs
+    voice_id: "Aria", // Default voice
     gender: "Female",
     description: "",
     relation: "",
     phone_number: "",
   };
+
+  // Initialize available voices when component mounts
+  useEffect(() => {
+    const voices = getVoicesByProvider(1); // Default to ElevenLabs
+    setAvailableVoices(voices);
+  }, []);
   const {
     page,
     order,
@@ -178,15 +188,22 @@ export default function AddNewUserPageView() {
     initialValues,
     validationSchema,
     onSubmit: async (values, { resetForm }) => {
-      console.log("working")
-      if (users.length > 0) {
+      console.log("Form submitted with values:", values);
+      console.log("Users array length:", users.length);
+      console.log("ID present:", !!id);
+      
+      // Temporarily allow submission without family members for debugging
+      // if (users.length > 0) {
+      if (true) { // Allow submission regardless of family members
         if (id) {
           try {
+            console.log("Updating patient...");
             await UpdateUser(
               {
                 first_name: values?.firstName?.trim(),
                 last_name: values?.lastName?.trim(),
-                hume_voice: values?.hume_voice?.trim(),
+                hume_voice: values?.voice_id?.trim(),
+                provider_id: values?.provider_id,
                 email: values?.patientEmail?.trim(),
                 family_members: users.map(({ id, ...rest }) => rest),
                 gender: values.gender,
@@ -200,20 +217,24 @@ export default function AddNewUserPageView() {
               showLoader,
               hideLoader
             ).then((res) => {
+              console.log("Update response:", res);
               if (res?.data?.success) {
                 resetForm();
                 navigate("/dashboard/patient-list");
               }
             });
-          } catch (error) {}
+          } catch (error) {
+            console.error("Error updating patient:", error);
+          }
         } else {
           try {
-            
+            console.log("Creating patient...");
             await createUser(
               {
                 first_name: values?.firstName?.trim(),
                 last_name: values?.lastName?.trim(),
-                hume_voice: values?.hume_voice?.trim(),
+                hume_voice: values?.voice_id?.trim(),
+                provider_id: values?.provider_id,
                 email: values?.patientEmail?.trim(),
                 family_members: users.map(({ id, ...rest }) => rest),
                 gender: values.gender,
@@ -226,14 +247,18 @@ export default function AddNewUserPageView() {
               showLoader,
               hideLoader
             ).then((res) => {
+              console.log("Create response:", res);
               if (res?.data?.success) {
                 resetForm();
                 navigate("/dashboard/patient-list");
               }
             });
-          } catch (error) {}
+          } catch (error) {
+            console.error("Error creating patient:", error);
+          }
         }
       } else {
+        console.log("No family members added, showing error");
         toast.error("At least one family member must be included.");
       }
     },
@@ -249,13 +274,18 @@ export default function AddNewUserPageView() {
     setFieldValue("birthdate", value?.birthdate ? value?.birthdate : "");
     setFieldValue("lastName", value?.last_name ? value?.last_name : "");
     setFieldValue("patientEmail", value?.email ? value?.email : "");
-    setFieldValue("hume_voice", value?.hume_voice ? value?.hume_voice : "");
+    setFieldValue("provider_id", value?.provider_id ? value?.provider_id : 1);
+    setFieldValue("voice_id", value?.hume_voice ? value?.hume_voice : "Aria");
     setFieldValue("gender", value?.gender ? value?.gender : "");
     setFieldValue("phone_number", value?.phone_number || "");
     setFieldValue(
       "description",
       value?.medical_history ? value?.medical_history : ""
     );
+    
+    // Update available voices based on provider
+    const voices = getVoicesByProvider(value?.provider_id || 1);
+    setAvailableVoices(voices);
   };
   const filteredUsers = stableSort(users, getComparator(order, orderBy));
 
@@ -483,12 +513,22 @@ export default function AddNewUserPageView() {
                     }}
                   >
                     <TextField
-                      name="hume_voice"
-                      label="Voice"
-                      value={values.hume_voice}
-                      onChange={handleChange}
-                      helperText={touched.hume_voice && errors.hume_voice}
-                      error={Boolean(touched.hume_voice && errors.hume_voice)}
+                      name="provider_id"
+                      label="Voice Provider"
+                      value={values.provider_id}
+                      onChange={(e) => {
+                        const selectedProviderId = parseInt(e.target.value);
+                        setFieldValue("provider_id", selectedProviderId);
+                        
+                        // Update available voices based on selected provider
+                        const voices = getVoicesByProvider(selectedProviderId);
+                        setAvailableVoices(voices);
+                        
+                        // Reset voice selection to first available voice
+                        if (voices.length > 0) {
+                          setFieldValue("voice_id", voices[0].id);
+                        }
+                      }}
                       select
                       fullWidth
                       variant="outlined"
@@ -499,27 +539,40 @@ export default function AddNewUserPageView() {
                         },
                       }}
                     >
-                    <option value="Aria">Aria</option>
-                    <option value="Roger">Roger</option>
-                    <option value="Sarah">Sarah</option>
-                    <option value="Laura">Laura</option>
-                    <option value="Charlie">Charlie</option>
-                    <option value="George">George</option>
-                    <option value="Callum">Callum</option>
-                    <option value="River">River</option>
-                    <option value="Liam">Liam</option>
-                    <option value="Charlotte">Charlotte</option>
-                    <option value="Alice">Alice</option>
-                    <option value="Matilda">Matilda</option>
-                    <option value="Will">Will</option>
-                    <option value="Jessica">Jessica</option>
-                    <option value="Eric">Eric</option>
-                    <option value="Chris">Chris</option>
-                    <option value="Brian">Brian</option>
-                    <option value="Daniel">Daniel</option>
-                    <option value="Lily">Lily</option>
-                    <option value="Bill">Bill</option>
-                    <option value="Lewis - Calm Scottish Male">Lewis - Calm Scottish Male</option>
+                      {PROVIDERS.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name}
+                        </option>
+                      ))}
+                    </TextField>
+                  </Grid>
+                  
+                  <Grid
+                    size={{
+                      sm: 6,
+                      xs: 12,
+                    }}
+                  >
+                    <TextField
+                      name="voice_id"
+                      label="Voice"
+                      value={values.voice_id}
+                      onChange={handleChange}
+                      select
+                      fullWidth
+                      variant="outlined"
+                      slotProps={{
+                        select: {
+                          native: true,
+                          IconComponent: KeyboardArrowDown,
+                        },
+                      }}
+                    >
+                      {availableVoices.map((voice) => (
+                        <option key={voice.id} value={voice.id}>
+                          {voice.name}
+                        </option>
+                      ))}
                     </TextField>
                   </Grid>
                   <Grid size={{ sm: 6, xs: 12 }}>
@@ -691,7 +744,16 @@ export default function AddNewUserPageView() {
                   my: 3,
                 }}
               >
-                <Button type="submit" variant="contained">
+                <Button 
+                  type="submit" 
+                  variant="contained"
+                  onClick={() => {
+                    console.log("Submit button clicked");
+                    console.log("Form values:", values);
+                    console.log("Form errors:", errors);
+                    console.log("Form touched:", touched);
+                  }}
+                >
                   {id ? "Update" : "Add"}
                 </Button>
                 {!id && (

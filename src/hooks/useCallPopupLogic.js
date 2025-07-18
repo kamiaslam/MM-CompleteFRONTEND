@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
-import toast from 'react-hot-toast';
+import React, { useState, useRef, useEffect } from "react";
+import toast from "react-hot-toast";
 
 export const CALL_STATES = {
-  INCOMING: 'INCOMING',
-  CONNECTING: 'CONNECTING',
-  ACTIVE: 'ACTIVE',
-  DECLINED: 'DECLINED',
-  IDLE: 'IDLE',
+  IDLE: "idle",
+  INCOMING: "incoming",
+  CONNECTING: "connecting",
+  ACTIVE: "active",
+  DECLINED: "declined",
 };
 
 const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef }) => {
@@ -16,9 +16,16 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   const socketRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
+  
+  // Audio Queue Management
+  const audioQueue = useRef([]);
+  const currentAudioElement = useRef(null);
+  const isPlaying = useRef(false);
+  const lastSequenceNumber = useRef(0);
+  const audioChunks = useRef(new Map()); // Store audio chunks by chunk_id
+  const audioUrls = useRef(new Set()); // Track created object URLs for cleanup
 
   useEffect(() => {
-    console.log("call predata", callPreData);
     setCallState(CALL_STATES.INCOMING);
 
     return () => {
@@ -27,6 +34,10 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   }, []);
 
   const cleanupResources = () => {
+    // Clean up audio resources
+    clearAudioQueue();
+    stopCurrentAudio();
+    
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -41,6 +52,42 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     ) {
       socketRef.current.close(1000, "Cleanup resources");
     }
+  };
+
+  // Audio Queue Management Functions
+  const clearAudioQueue = () => {
+    const queueLength = audioQueue.current.length;
+    audioQueue.current = [];
+    audioChunks.current.clear();
+    lastSequenceNumber.current = 0;
+  };
+
+  const stopCurrentAudio = () => {
+    if (currentAudioElement.current) {
+      try {
+        currentAudioElement.current.pause();
+        currentAudioElement.current.currentTime = 0;
+        currentAudioElement.current = null;
+      } catch (error) {
+        console.warn("Error stopping current audio:", error);
+      }
+    }
+    isPlaying.current = false;
+  };
+
+  const cleanupAudioUrl = (url) => {
+    if (url && audioUrls.current.has(url)) {
+      URL.revokeObjectURL(url);
+      audioUrls.current.delete(url);
+    }
+  };
+
+  const cleanupAllAudioUrls = () => {
+    const urlCount = audioUrls.current.size;
+    audioUrls.current.forEach(url => {
+      URL.revokeObjectURL(url);
+    });
+    audioUrls.current.clear();
   };
 
   const base64ToBlob = (base64, mime) => {
@@ -61,6 +108,125 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     return new Blob(byteArrays, { type: mime });
   };
 
+  const createAudioElement = (audioUrl) => {
+    const audio = new Audio(audioUrl);
+    audio.preload = 'auto';
+    return audio;
+  };
+
+  const playAudioChunk = async (audioChunk) => {
+    try {
+      const { audio: base64Audio, chunk_id, sequence_number, play_immediately, wait_for_previous, stop_previous } = audioChunk;
+      
+     
+      // Handle wait_for_previous flag
+      if (wait_for_previous && isPlaying.current) {
+        console.log(`Waiting for previous audio to finish before playing chunk ${chunk_id}`);
+        return; // Don't play yet, it will be handled by the queue
+      }
+
+      // Convert base64 to blob and create URL
+      const audioBlob = base64ToBlob(base64Audio, "audio/wav");
+      const audioUrl = URL.createObjectURL(audioBlob);
+      audioUrls.current.add(audioUrl);
+
+      // Create and play audio element
+      const audioElement = createAudioElement(audioUrl);
+      currentAudioElement.current = audioElement;
+      isPlaying.current = true;
+
+      // Set up audio event handlers
+      audioElement.onended = () => {
+        cleanupAudioUrl(audioUrl);
+        isPlaying.current = false;
+        currentAudioElement.current = null;
+        
+        // Process next item in queue
+        processAudioQueue();
+      };
+
+      audioElement.onerror = (error) => {
+        console.error(`Error playing audio chunk ${chunk_id}:`, error);
+        cleanupAudioUrl(audioUrl);
+        isPlaying.current = false;
+        currentAudioElement.current = null;
+        processAudioQueue();
+      };
+
+      // Play the audio
+      await audioElement.play();
+
+    } catch (error) {
+      console.error("Error playing audio chunk:", error);
+      isPlaying.current = false;
+      currentAudioElement.current = null;
+      processAudioQueue();
+    }
+  };
+
+  const processAudioQueue = () => {
+    if (isPlaying.current || audioQueue.current.length === 0) {
+      return;
+    }
+
+    // Sort queue by sequence number
+    audioQueue.current.sort((a, b) => a.sequence_number - b.sequence_number);
+    
+    // Find the next chunk to play
+    const nextChunk = audioQueue.current.find(chunk => 
+      chunk.sequence_number > lastSequenceNumber.current
+    );
+
+    if (nextChunk) {
+      audioQueue.current = audioQueue.current.filter(chunk => chunk !== nextChunk);
+      lastSequenceNumber.current = nextChunk.sequence_number;
+      playAudioChunk(nextChunk);
+    }
+  };
+
+  const handleAudioChunk = (data) => {
+    const { 
+      audio, 
+      chunk_id, 
+      sequence_number, 
+      play_immediately, 
+      wait_for_previous, 
+      stop_previous, 
+      interrupt 
+    } = data;
+
+
+
+    // Handle interrupt flag
+    if (interrupt) {
+      stopCurrentAudio();
+      clearAudioQueue();
+      cleanupAllAudioUrls();
+      setIsLoading(false);
+      return;
+    }
+
+    // Create audio chunk object
+    const audioChunk = {
+      audio,
+      chunk_id,
+      sequence_number,
+      play_immediately,
+      wait_for_previous,
+      stop_previous
+    };
+
+    // Store chunk for potential reordering
+    audioChunks.current.set(chunk_id, audioChunk);
+
+    // ALWAYS wait for previous audio to complete (ignore all flags except interrupt)
+    if (isPlaying.current) {
+      audioQueue.current.push(audioChunk);
+    } else {
+      playAudioChunk(audioChunk);
+    }
+  };
+
   const acceptCall = async () => {
     try {
       setCallState(CALL_STATES.CONNECTING);
@@ -68,17 +234,15 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       mediaStreamRef.current = stream;
 
       const socket = new WebSocket(
-        `${import.meta.env.VITE_CALL_WS_URL}/api/call/call-with-bot?patient_id=${Patient_id}&voice_id=${callPreData.voice_id}&patient_name=Test&carehome_id=${callPreData.carehome_id}`
+        `${import.meta.env.VITE_CALL_WS_URL}/api/call/call-with-bot?patient_id=${Patient_id}&voice_id=${callPreData.voice_id}&patient_name=Test&carehome_id=${callPreData.carehome_id}&provider=${callPreData.provider_id}`
       );
       socketRef.current = socket;
 
       await new Promise((resolve, reject) => {
         socket.onopen = () => {
-          console.log("WebSocket connection established");
           resolve();
         };
         socket.onerror = (error) => {
-          console.error("WebSocket connection error:", error);
           reject(error);
         };
       });
@@ -87,51 +251,32 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         console.warn(
           `WebSocket closed. Code: ${event.code}, Reason: "${event.reason || 'No reason'}"`
         );
-        // Avoid calling cleanup here to prevent premature stop
       };
 
       socket.onmessage = async (event) => {
         try {
           const data = JSON.parse(event.data);
 
-          if (data.type === "intruption") {
-            console.warn("Received 'intruption' message");
-            if (audioRef.current && !audioRef.current.paused) {
-              audioRef.current.pause();
-              audioRef.current.currentTime = 0;
-            }
+          // Handle interruption messages (check both interrupt flag and type)
+          if (data.interrupt || data.type === "interruption" || data.type === "intruption") {
+            console.warn("Received interruption message - stopping all audio");
+            stopCurrentAudio();
+            clearAudioQueue();
+            cleanupAllAudioUrls();
+            setIsLoading(false);
             return;
           }
 
+          // Handle audio chunks
           if (data.audio) {
             setIsLoading(true);
-            const audioBlob = base64ToBlob(data.audio, "audio/wav");
-            const audioUrl = URL.createObjectURL(audioBlob);
-
-            if (audioRef.current) {
-              try {
-                if (!audioRef.current.paused) {
-                  audioRef.current.pause();
-                }
-                audioRef.current.currentTime = 0;
-              } catch (pauseError) {
-                console.warn("Audio pause error:", pauseError);
-              }
-
-              audioRef.current.src = audioUrl;
-
-              try {
-                await audioRef.current.play();
-                audioRef.current.onended = () => {
-                  URL.revokeObjectURL(audioUrl);
-                };
-              } catch (playError) {
-                console.warn("Audio play error:", playError.message);
-              }
-            }
-
+            handleAudioChunk(data);
             setIsLoading(false);
+            return;
           }
+
+          // Handle other message types
+
         } catch (error) {
           console.error("Error processing WebSocket message:", error);
         }
@@ -178,6 +323,11 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   };
 
   const endCall = () => {
+    // Clean up all audio resources
+    stopCurrentAudio();
+    clearAudioQueue();
+    cleanupAllAudioUrls();
+    
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
@@ -194,16 +344,6 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     ) {
       socketRef.current.close(1000, "Call ended");
       socketRef.current = null;
-    }
-
-    if (audioRef.current) {
-      try {
-        URL.revokeObjectURL(audioRef.current.src);
-      } catch (e) {
-        console.warn("Error revoking audio URL:", e);
-      }
-      audioRef.current.pause();
-      audioRef.current.src = '';
     }
 
     setIsLoading(false);

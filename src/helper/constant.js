@@ -408,3 +408,78 @@ export const VIEW_OPTIONS = [
   { id: "month", label: "Month" },
   { id: "agenda", label: "Agenda" },
 ];
+
+// Voice Provider Constants
+export const PROVIDERS = [
+  { name: "ElevenLabs", id: 1 },
+  { name: "Replicate", id: 2 },
+  { name: "Amazon Polly", id: 3 },
+  { name: "Azure TTS", id: 4 },
+];
+
+// ElevenLabs voices (existing hume_voice options)
+export const elevenLabsVoices = [
+  { name: "Aria", id: "Aria" },
+  { name: "Roger", id: "Roger" },
+  { name: "Sarah", id: "Sarah" },
+  { name: "Laura", id: "Laura" },
+  { name: "Charlie", id: "Charlie" },
+  { name: "George", id: "George" },
+  { name: "Callum", id: "Callum" },
+  { name: "River", id: "River" },
+  { name: "Liam", id: "Liam" },
+  { name: "Charlotte", id: "Charlotte" },
+  { name: "Alice", id: "Alice" },
+  { name: "Matilda", id: "Matilda" },
+  { name: "Will", id: "Will" },
+  { name: "Jessica", id: "Jessica" },
+  { name: "Eric", id: "Eric" },
+  { name: "Chris", id: "Chris" },
+  { name: "Brian", id: "Brian" },
+  { name: "Daniel", id: "Daniel" },
+  { name: "Lily", id: "Lily" },
+  { name: "Bill", id: "Bill" },
+  { name: "Lewis - Calm Scottish Male", id: "Lewis - Calm Scottish Male" },
+];
+
+export const replicateVoices = [
+  { name: "Wise_Woman", id: "Wise_Woman" },
+  { name: "Calm_Woman", id: "Calm_Woman" },
+  { name: "Friendly_Person", id: "Friendly_Person" },
+  { name: "Patient_Man", id: "Patient_Man" },
+  { name: "Deep_Voice_Man", id: "Deep_Voice_Man" },
+];
+
+export const pollyVoices = [
+  { name: "Olivia", id: "Olivia" },
+  { name: "Amy", id: "Amy" },
+  { name: "Matthew", id: "Matthew" },
+  { name: "Stephen", id: "Stephen" },
+];
+
+export const azureTTSVoices = [
+  { name: "LibbyNeural", id: "en-GB-LibbyNeural" },
+  { name: "RyanNeural", id: "en-GB-RyanNeural" },
+  { name: "SoniaNeural", id: "en-GB-SoniaNeural" },
+  { name: "AbbiNeural", id: "en-GB-AbbiNeural" },
+  { name: "AlfieNeural", id: "en-GB-AlfieNeural" },
+  { name: "BellaNeural", id: "en-GB-BellaNeural" },
+  { name: "ElliotNeural", id: "en-GB-ElliotNeural" },
+  { name: "ThomasNeural", id: "en-GB-ThomasNeural" },
+];
+
+// Helper function to get voices by provider
+export const getVoicesByProvider = (providerId) => {
+  switch (providerId) {
+    case 1:
+      return elevenLabsVoices;
+    case 2:
+      return replicateVoices;
+    case 3:
+      return pollyVoices;
+    case 4:
+      return azureTTSVoices;
+    default:
+      return [];
+  }
+};
