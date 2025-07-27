@@ -415,6 +415,7 @@ export const PROVIDERS = [
   { name: "Replicate", id: 2 },
   { name: "Amazon Polly", id: 3 },
   { name: "Azure TTS", id: 4 },
+  { name: "Dia", id: 5 }, // Added Dia
 ];
 
 // ElevenLabs voices (existing hume_voice options)
@@ -468,6 +469,14 @@ export const azureTTSVoices = [
   { name: "ThomasNeural", id: "en-GB-ThomasNeural" },
 ];
 
+// Dia voices
+export const diaVoices = [
+  { name: "Maya", id: "Maya" },
+  { name: "Ethan", id: "Ethan" },
+  { name: "Clara", id: "Clara" },
+  { name: "Oliver", id: "Oliver" },
+];
+
 // Helper function to get voices by provider
 export const getVoicesByProvider = (providerId) => {
   switch (providerId) {
@@ -479,6 +488,8 @@ export const getVoicesByProvider = (providerId) => {
       return pollyVoices;
     case 4:
       return azureTTSVoices;
+    case 5:
+      return diaVoices;
     default:
       return [];
   }

@@ -21,6 +21,15 @@ const CallInProgress = ({
   const intervalRef = useRef(null);
 //   const callId = "0bea0b25-aefa-4c04-b426-b353605544d6";
 
+  // Listen for call-image-frame events (from WebSocket binary image)
+  useEffect(() => {
+    const handler = (e) => {
+      setSelectedImage(e.detail.imageUrl);
+    };
+    window.addEventListener('call-image-frame', handler);
+    return () => window.removeEventListener('call-image-frame', handler);
+  }, []);
+
   // Fetch media links
   useEffect(() => {
     if (!callId) return;

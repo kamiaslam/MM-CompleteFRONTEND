@@ -116,19 +116,25 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
 
   const playAudioChunk = async (audioChunk) => {
     try {
-      const { audio: base64Audio, chunk_id, sequence_number, play_immediately, wait_for_previous, stop_previous } = audioChunk;
-      
-     
+      let audioUrl;
+      let chunk_id = audioChunk.chunk_id;
+      let wait_for_previous = audioChunk.wait_for_previous;
+      // Support both base64 and direct audioUrl
+      if (audioChunk.audioUrl) {
+        console.log('playAudioChunk: using audioUrl from binary frame', audioChunk.audioUrl);
+        audioUrl = audioChunk.audioUrl;
+      } else {
+        const { audio: base64Audio } = audioChunk;
+        const audioBlob = base64ToBlob(base64Audio, "audio/wav");
+        audioUrl = URL.createObjectURL(audioBlob);
+        audioUrls.current.add(audioUrl);
+      }
+
       // Handle wait_for_previous flag
       if (wait_for_previous && isPlaying.current) {
         console.log(`Waiting for previous audio to finish before playing chunk ${chunk_id}`);
         return; // Don't play yet, it will be handled by the queue
       }
-
-      // Convert base64 to blob and create URL
-      const audioBlob = base64ToBlob(base64Audio, "audio/wav");
-      const audioUrl = URL.createObjectURL(audioBlob);
-      audioUrls.current.add(audioUrl);
 
       // Create and play audio element
       const audioElement = createAudioElement(audioUrl);
@@ -140,8 +146,6 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         cleanupAudioUrl(audioUrl);
         isPlaying.current = false;
         currentAudioElement.current = null;
-        
-        // Process next item in queue
         processAudioQueue();
       };
 
@@ -154,7 +158,12 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       };
 
       // Play the audio
-      await audioElement.play();
+      try {
+        await audioElement.play();
+        console.log('Audio play started in playAudioChunk', audioUrl);
+      } catch (e) {
+        console.error('Audio play error in playAudioChunk:', e);
+      }
 
     } catch (error) {
       console.error("Error playing audio chunk:", error);
@@ -234,7 +243,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       mediaStreamRef.current = stream;
 
       const socket = new WebSocket(
-        `${import.meta.env.VITE_CALL_WS_URL}/api/call/call-with-bot?patient_id=${Patient_id}&voice_id=${callPreData.voice_id}&patient_name=Test&carehome_id=${callPreData.carehome_id}&provider=${callPreData.provider_id}`
+        `${import.meta.env.VITE_CALL_WS_URL}/api/call/call-with-bot?patient_id=${Patient_id}&voice_id=${callPreData.voice_id}&patient_name=Test&carehome_id=${callPreData.carehome_id}&provider=${callPreData.provider_id}&call_schedule_id=${callId || callPreData.call_schedule_id || ''}`
       );
       socketRef.current = socket;
 
@@ -254,6 +263,108 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       };
 
       socket.onmessage = async (event) => {
+        console.log('WebSocket event.data:', event.data, 'is Blob:', event.data instanceof Blob, 'is ArrayBuffer:', event.data instanceof ArrayBuffer);
+        // If event.data is a Blob or ArrayBuffer, treat as binary frame
+        if (event.data instanceof Blob) {
+          // Try to detect type (audio or image)
+          const blob = event.data;
+          console.log('Received Blob. Type:', blob.type, 'Size:', blob.size);
+          if (blob.type.startsWith('audio') || blob.type === '' || !blob.type) {
+            console.log('Handling as audio blob');
+            // Queue or play audio after current audio
+            const audioUrl = URL.createObjectURL(blob);
+            audioUrls.current.add(audioUrl);
+            const audioElement = createAudioElement(audioUrl);
+            // If audio is playing, queue it, else play immediately
+            if (isPlaying.current) {
+              console.log('Audio is playing, queueing binary audio');
+              audioQueue.current.push({
+                audio: null, // not base64, but we use audioUrl directly
+                chunk_id: 'binary',
+                sequence_number: lastSequenceNumber.current + 1,
+                play_immediately: false,
+                wait_for_previous: true,
+                stop_previous: false,
+                audioUrl
+              });
+            } else {
+              console.log('No audio playing, playing binary audio immediately');
+              isPlaying.current = true;
+              currentAudioElement.current = audioElement;
+              audioElement.onended = () => {
+                cleanupAudioUrl(audioUrl);
+                isPlaying.current = false;
+                currentAudioElement.current = null;
+                processAudioQueue();
+              };
+              audioElement.onerror = (error) => {
+                cleanupAudioUrl(audioUrl);
+                isPlaying.current = false;
+                currentAudioElement.current = null;
+                processAudioQueue();
+              };
+              try {
+                await audioElement.play();
+                console.log('Audio play started for binary audio');
+              } catch (e) {
+                console.error('Audio play error for binary audio:', e);
+              }
+            }
+          } else if (blob.type.startsWith('image')) {
+            // Display image (implement a callback or event for UI to show image)
+            if (typeof window !== 'undefined') {
+              const imageUrl = URL.createObjectURL(blob);
+              // You may want to call a callback or dispatch an event here
+              window.dispatchEvent(new CustomEvent('call-image-frame', { detail: { imageUrl } }));
+            }
+          }
+          return;
+        }
+        // If event.data is ArrayBuffer (rare, but possible)
+        if (event.data instanceof ArrayBuffer) {
+          console.log('Received ArrayBuffer. Length:', event.data.byteLength);
+          // Try to detect type (default to audio)
+          const audioBlob = new Blob([event.data], { type: 'audio/wav' });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          audioUrls.current.add(audioUrl);
+          const audioElement = createAudioElement(audioUrl);
+          if (isPlaying.current) {
+            console.log('Audio is playing, queueing ArrayBuffer audio');
+            audioQueue.current.push({
+              audio: null,
+              chunk_id: 'binary',
+              sequence_number: lastSequenceNumber.current + 1,
+              play_immediately: false,
+              wait_for_previous: true,
+              stop_previous: false,
+              audioUrl
+            });
+          } else {
+            console.log('No audio playing, playing ArrayBuffer audio immediately');
+            isPlaying.current = true;
+            currentAudioElement.current = audioElement;
+            audioElement.onended = () => {
+              cleanupAudioUrl(audioUrl);
+              isPlaying.current = false;
+              currentAudioElement.current = null;
+              processAudioQueue();
+            };
+            audioElement.onerror = (error) => {
+              cleanupAudioUrl(audioUrl);
+              isPlaying.current = false;
+              currentAudioElement.current = null;
+              processAudioQueue();
+            };
+            try {
+              await audioElement.play();
+              console.log('Audio play started for ArrayBuffer audio');
+            } catch (e) {
+              console.error('Audio play error for ArrayBuffer audio:', e);
+            }
+          }
+          return;
+        }
+        // Otherwise, treat as JSON message
         try {
           const data = JSON.parse(event.data);
 

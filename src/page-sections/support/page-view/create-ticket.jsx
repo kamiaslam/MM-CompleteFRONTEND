@@ -142,41 +142,39 @@ export default function CreateTicketPageView() {
         return "audio/*";
       case "video":
         return "video/*";
+      case "document":
+        return ".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
+      case "all":
+        return "image/*,audio/*,video/*,.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
       default:
-        return "";
+        return "image/*,audio/*,video/*,.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
     }
   };
 
+
   const handleDrop = (acceptedFiles) => {
-  const filteredFiles = acceptedFiles.filter((file) =>
-    file.type.startsWith(values?.fileType)
-  );
-
-  const totalFiles = uploadedFiles.length + filteredFiles.length;
-
-  if (values?.fileType === "image" && totalFiles > 2) {
-    const allowedFiles = 2 - uploadedFiles.length;
-    if (allowedFiles <= 0) {
-      toast.error("You can only upload a maximum of 2 images.");
-      return;
+    // Accept all files for 'all' type, otherwise filter by type
+    let filteredFiles = acceptedFiles;
+    if (values?.fileType !== "all") {
+      if (values?.fileType === "document") {
+        // Accept only txt, pdf, docx
+        filteredFiles = acceptedFiles.filter((file) =>
+          [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/plain",
+          ].includes(file.type) ||
+          [".pdf", ".docx", ".txt"].some(ext => file.name.endsWith(ext))
+        );
+      } else {
+        filteredFiles = acceptedFiles.filter((file) => file.type.startsWith(values?.fileType));
+      }
     }
-
-    const limitedFiles = filteredFiles.slice(0, allowedFiles);
-
-    setUploadedFiles((prevFiles) => {
-      const updatedFiles = [...prevFiles, ...limitedFiles];
-      setFieldValue("media", updatedFiles);
-      return updatedFiles;
-    });
-
-    toast(`Only ${allowedFiles} more image${allowedFiles > 1 ? "s" : ""} allowed.`);
-  } else {
     setUploadedFiles((prevFiles) => {
       const updatedFiles = [...prevFiles, ...filteredFiles];
       setFieldValue("media", updatedFiles);
       return updatedFiles;
     });
-  }
 };
 
 
@@ -210,7 +208,6 @@ export default function CreateTicketPageView() {
             <Grid item xs={12}>
               <TextField
                 select
-                style={{ display: 'none' }}
                 fullWidth
                 name="fileType"
                 value={values?.fileType}
@@ -219,6 +216,7 @@ export default function CreateTicketPageView() {
                   setUploadedFiles([]);
                   setFieldValue("media", []);
                 }}
+                label="File Type"
                 slotProps={{
                   select: {
                     native: true,
@@ -226,9 +224,11 @@ export default function CreateTicketPageView() {
                   },
                 }}
               >
+                <option value="all">All</option>
                 <option value="image">Image</option>
-                {/* <option value="audio">Audio</option> */}
-                {/* <option value="video">Video</option> */}
+                <option value="audio">Audio</option>
+                <option value="video">Video</option>
+                <option value="document">Document</option>
               </TextField>
             </Grid>
 
@@ -401,6 +401,13 @@ export default function CreateTicketPageView() {
                             />
                             Your browser does not support the video element.
                           </video>
+                        </Box>
+                      )}
+                      {/* Document preview: show icon and name */}
+                      {((file.type.startsWith("application") || file.type.startsWith("text")) && !file.type.startsWith("image") && !file.type.startsWith("audio") && !file.type.startsWith("video")) && (
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <span role="img" aria-label="document">📄</span>
+                          <Paragraph>{file.name}</Paragraph>
                         </Box>
                       )}
                       <div className="uploaded-things-description">
