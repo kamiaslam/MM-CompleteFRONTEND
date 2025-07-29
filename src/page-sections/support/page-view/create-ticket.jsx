@@ -141,41 +141,46 @@ export default function CreateTicketPageView() {
       case "audio":
         return "audio/*";
       case "video":
-        return "video/*";
-      case "document":
-        return ".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
+        // Video is disabled for families, return empty to prevent uploads
+        return "";
       case "all":
-        return "image/*,audio/*,video/*,.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
+        // Only image and audio for families
+        return "image/*,audio/*";
       default:
-        return "image/*,audio/*,video/*,.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain";
+        // Only image and audio for families
+        return "image/*,audio/*";
     }
   };
 
 
   const handleDrop = (acceptedFiles) => {
+    // Prevent video uploads for families
+    if (values?.fileType === "video") {
+      toast.error("Video upload is not available yet. Coming soon!");
+      return;
+    }
+    
     // Accept all files for 'all' type, otherwise filter by type
     let filteredFiles = acceptedFiles;
     if (values?.fileType !== "all") {
-      if (values?.fileType === "document") {
-        // Accept only txt, pdf, docx
-        filteredFiles = acceptedFiles.filter((file) =>
-          [
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "text/plain",
-          ].includes(file.type) ||
-          [".pdf", ".docx", ".txt"].some(ext => file.name.endsWith(ext))
-        );
-      } else {
-        filteredFiles = acceptedFiles.filter((file) => file.type.startsWith(values?.fileType));
-      }
+      // Filter by type but exclude video files
+      filteredFiles = acceptedFiles.filter((file) => 
+        file.type.startsWith(values?.fileType) && !file.type.startsWith("video")
+      );
+    } else {
+      // For "all" type, only accept image and audio files
+      filteredFiles = acceptedFiles.filter((file) => 
+        (file.type.startsWith("image") || file.type.startsWith("audio")) && 
+        !file.type.startsWith("video")
+      );
     }
+    
     setUploadedFiles((prevFiles) => {
       const updatedFiles = [...prevFiles, ...filteredFiles];
       setFieldValue("media", updatedFiles);
       return updatedFiles;
     });
-};
+  };
 
 
   const handleDelete = (fileIndex) => {
@@ -227,8 +232,7 @@ export default function CreateTicketPageView() {
                 <option value="all">All</option>
                 <option value="image">Image</option>
                 <option value="audio">Audio</option>
-                <option value="video">Video</option>
-                <option value="document">Document</option>
+                <option value="video" disabled>Video - Coming Soon</option>
               </TextField>
             </Grid>
 
@@ -261,7 +265,25 @@ export default function CreateTicketPageView() {
 
             {/* Dropzone for file upload */}
             <Grid item xs={12} mt={2}>
-              <DropZone onDrop={handleDrop} accept={getAcceptedFileTypes()} />
+              {values?.fileType === "video" ? (
+                <Box sx={{ 
+                  p: 2, 
+                  border: '1px dashed #ccc', 
+                  borderRadius: 1,
+                  textAlign: 'center',
+                  backgroundColor: '#f5f5f5'
+                }}>
+                  <H6 color="text.secondary" mb={1}>
+                    🎬 Video Upload Coming Soon
+                  </H6>
+                  <Paragraph color="text.secondary" fontSize={14}>
+                    Video upload functionality will be available in a future update. 
+                    Please use audio or image upload for now.
+                  </Paragraph>
+                </Box>
+              ) : (
+                <DropZone onDrop={handleDrop} accept={getAcceptedFileTypes()} />
+              )}
             </Grid>
             {touched.media && errors.media && (
               <span
