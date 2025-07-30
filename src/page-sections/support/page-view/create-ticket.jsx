@@ -164,23 +164,23 @@ export default function CreateTicketPageView() {
     let filteredFiles = acceptedFiles;
     if (values?.fileType !== "all") {
       // Filter by type but exclude video files
-      filteredFiles = acceptedFiles.filter((file) => 
+        filteredFiles = acceptedFiles.filter((file) =>
         file.type.startsWith(values?.fileType) && !file.type.startsWith("video")
-      );
-    } else {
+        );
+      } else {
       // For "all" type, only accept image and audio files
       filteredFiles = acceptedFiles.filter((file) => 
         (file.type.startsWith("image") || file.type.startsWith("audio")) && 
         !file.type.startsWith("video")
       );
-    }
+      }
     
     setUploadedFiles((prevFiles) => {
       const updatedFiles = [...prevFiles, ...filteredFiles];
       setFieldValue("media", updatedFiles);
       return updatedFiles;
     });
-  };
+};
 
 
   const handleDelete = (fileIndex) => {
@@ -282,7 +282,7 @@ export default function CreateTicketPageView() {
                   </Paragraph>
                 </Box>
               ) : (
-                <DropZone onDrop={handleDrop} accept={getAcceptedFileTypes()} />
+              <DropZone onDrop={handleDrop} accept={getAcceptedFileTypes()} />
               )}
             </Grid>
             {touched.media && errors.media && (

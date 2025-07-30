@@ -19,11 +19,16 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   const mediaStreamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   
-  // Simple Audio Management
-  const currentAudioRef = useRef(null);
+  // Enhanced Audio Management with real-time interruption
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
   const urlsToCleanupRef = useRef(new Set());
+  const shouldInterruptRef = useRef(false); // New: interruption flag
+  
+  // High-quality audio context management
+  const audioContextRef = useRef(null);
+  const currentAudioSourceRef = useRef(null);
+  const gainNodeRef = useRef(null);
 
   // Background Music Management
   const backgroundMusicRef = useRef(null);
@@ -41,31 +46,81 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   const speechContextRef = useRef(null);
   const processorRef = useRef(null);
 
-  // Audio Playback Context for better quality
-  const playbackContextRef = useRef(null);
-  const currentAudioSourceRef = useRef(null);
-
   useEffect(() => {
     setCallState(CALL_STATES.INCOMING);
     return () => cleanup();
   }, []);
 
-  // Simple function to stop all audio immediately
-  const stopAllAudio = () => {
-    console.log('🛑 Stopping all audio immediately');
-    
-    // Stop current audio
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current.currentTime = 0;
-      currentAudioRef.current.src = '';
-      currentAudioRef.current = null;
+  // Utility: Convert PCM to WAV Blob
+  function pcmToWav(pcmData, sampleRate = 16000, numChannels = 1, bitDepth = 16) {
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const wavBuffer = new ArrayBuffer(44 + pcmData.length);
+    const view = new DataView(wavBuffer);
+
+    // RIFF identifier 'RIFF'
+    view.setUint32(0, 0x52494646, false);
+    // file length minus RIFF identifier length and file description length
+    view.setUint32(4, 36 + pcmData.length, true);
+    // RIFF type 'WAVE'
+    view.setUint32(8, 0x57415645, false);
+    // format chunk identifier 'fmt '
+    view.setUint32(12, 0x666d7420, false);
+    // format chunk length
+    view.setUint32(16, 16, true);
+    // sample format (raw)
+    view.setUint16(20, 1, true);
+    // channel count
+    view.setUint16(22, numChannels, true);
+    // sample rate
+    view.setUint32(24, sampleRate, true);
+    // byte rate (sample rate * block align)
+    view.setUint32(28, byteRate, true);
+    // block align (channel count * bytes per sample)
+    view.setUint16(32, blockAlign, true);
+    // bits per sample
+    view.setUint16(34, bitDepth, true);
+    // data chunk identifier 'data'
+    view.setUint32(36, 0x64617461, false);
+    // data chunk length
+    view.setUint32(40, pcmData.length, true);
+
+    // Write PCM samples
+    new Uint8Array(wavBuffer, 44).set(pcmData);
+
+    return new Blob([wavBuffer], { type: 'audio/wav; codecs=1' });
+  }
+
+  // Initialize high-quality audio context
+  const initializeAudioContext = async () => {
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 16000, // Match PCM/WAV sample rate
+        latencyHint: 'interactive' // Low latency for real-time
+      });
+      
+      // Create gain node for volume control
+      gainNodeRef.current = audioContextRef.current.createGain();
+      gainNodeRef.current.connect(audioContextRef.current.destination);
     }
     
-    // Stop current audio (AudioContext)
+    if (audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+  };
+
+  // Real-time interruption function
+  const executeImmediateInterruption = () => {
+    console.log('🚨 IMMEDIATE INTERRUPTION - stopping all audio NOW');
+    
+    // Set interruption flag
+    shouldInterruptRef.current = true;
+    
+    // Stop current AudioContext source immediately
     if (currentAudioSourceRef.current) {
       try {
-        currentAudioSourceRef.current.stop();
+        currentAudioSourceRef.current.stop(0); // Stop immediately
         currentAudioSourceRef.current.disconnect();
         currentAudioSourceRef.current = null;
       } catch (error) {
@@ -73,19 +128,17 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       }
     }
     
-    // Stop background music
-      if (backgroundMusicRef.current) {
-        backgroundMusicRef.current.pause();
+    // Stop background music immediately
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.pause();
       backgroundMusicRef.current.currentTime = 0;
-      backgroundMusicRef.current.src = '';
-        backgroundMusicRef.current = null;
-      }
-
-    // Clear queue
+    }
+    
+    // Clear the entire queue
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     
-    // Cleanup URLs
+    // Clean up URLs
     urlsToCleanupRef.current.forEach(url => {
       try {
         URL.revokeObjectURL(url);
@@ -94,51 +147,79 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       }
     });
     urlsToCleanupRef.current.clear();
+    
+    console.log('✅ Immediate interruption completed');
   };
 
-  // High-quality AudioContext playback function
-  const playAudioWithContext = async (audioBlob) => {
+  // Enhanced high-quality audio playback
+  const playAudioWithEnhancedQuality = async (audioBlob) => {
     try {
-      // Create playback context if needed
-      if (!playbackContextRef.current || playbackContextRef.current.state === 'closed') {
-        playbackContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      // Check for interruption before starting
+      if (shouldInterruptRef.current) {
+        console.log('🚫 Skipping audio due to interruption flag');
+        return false;
       }
+
+      await initializeAudioContext();
       
-      // Resume context if suspended
-      if (playbackContextRef.current.state === 'suspended') {
-        await playbackContextRef.current.resume();
-      }
-      
+      // Convert blob to array buffer
       const arrayBuffer = await audioBlob.arrayBuffer();
-      const audioBuffer = await playbackContextRef.current.decodeAudioData(arrayBuffer);
       
-      console.log(`🎵 AudioContext decoded: duration=${audioBuffer.duration}s, sampleRate=${audioBuffer.sampleRate}Hz, channels=${audioBuffer.numberOfChannels}`);
+      // Decode with high quality settings
+      const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
       
-      const source = playbackContextRef.current.createBufferSource();
+      console.log(`🎵 High-quality audio: duration=${audioBuffer.duration}s, sampleRate=${audioBuffer.sampleRate}Hz, channels=${audioBuffer.numberOfChannels}`);
+      
+      // Check for interruption after decoding
+      if (shouldInterruptRef.current) {
+        console.log('🚫 Interruption detected after decoding, aborting playback');
+        return false;
+      }
+      
+      // Create buffer source
+      const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(playbackContextRef.current.destination);
+      
+      // Connect through gain node for better control
+      source.connect(gainNodeRef.current);
+      
+      // Set high-quality playback parameters
+      source.playbackRate.value = 1.0; // Ensure normal speed
+      gainNodeRef.current.gain.value = 1.0; // Full volume
       
       currentAudioSourceRef.current = source;
       
+      // Handle end event
       source.onended = () => {
-        console.log('🔚 AudioContext playback ended');
-        isPlayingRef.current = false;
+        console.log('🔚 High-quality audio ended');
         currentAudioSourceRef.current = null;
-        setTimeout(playNext, 50);
+        isPlayingRef.current = false;
+        
+        // Reset interruption flag and continue queue
+        shouldInterruptRef.current = false;
+          setTimeout(playNext, 50);
       };
       
+      // Start playback
       source.start(0);
-      console.log('▶️ AudioContext playback started');
+      console.log('▶️ High-quality audio started');
       return true;
       
     } catch (error) {
-      console.error('❌ AudioContext playback failed:', error);
+      console.error('❌ High-quality audio playback failed:', error);
+      shouldInterruptRef.current = false;
       return false;
     }
   };
 
-  // Simple function to play next audio in queue
+  // Enhanced queue processing with interruption checks
   const playNext = async () => {
+    // Check interruption flag
+    if (shouldInterruptRef.current) {
+      console.log('🚫 Queue processing stopped due to interruption');
+      return;
+    }
+
     if (isPlayingRef.current || audioQueueRef.current.length === 0) {
       return;
     }
@@ -149,75 +230,64 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     console.log(`▶️ Playing: ${item.type}`);
     isPlayingRef.current = true;
 
-    // Try AudioContext first for better quality
+    // Try high-quality AudioContext playback
     try {
       const response = await fetch(item.url);
+          
+          // Check interruption after fetch
+      if (shouldInterruptRef.current) {
+        console.log('🚫 Interruption detected after fetch, aborting');
+        isPlayingRef.current = false;
+            return;
+          }
+          
       const audioBlob = await response.blob();
       
-      const audioContextSuccess = await playAudioWithContext(audioBlob);
-      if (audioContextSuccess) {
-        return;
-      }
-      } catch (error) {
-      console.warn('AudioContext failed, falling back to HTML5 Audio:', error);
+      // Ensure we have the right MIME type for quality
+      const properBlob = new Blob([audioBlob], { 
+        type: audioBlob.type || 'audio/webm;codecs=opus' 
+      });
+      
+      const success = await playAudioWithEnhancedQuality(properBlob);
+      if (success) {
+            return;
+          }
+    } catch (error) {
+      console.warn('Enhanced audio failed, this should not happen with Hume:', error);
+      isPlayingRef.current = false;
+      shouldInterruptRef.current = false;
+            setTimeout(playNext, 50);
     }
-
-    // Fallback to HTML5 Audio
-    const audio = new Audio(item.url);
-    currentAudioRef.current = audio;
-    audio.volume = 1.0;
-    
-    // Set audio properties for better quality
-    audio.preload = 'auto';
-    audio.crossOrigin = 'anonymous';
-    
-    // Log audio properties for debugging
-    audio.addEventListener('loadedmetadata', () => {
-      console.log(`🎵 HTML5 Audio loaded: duration=${audio.duration}s, sampleRate=${audio.sampleRate || 'unknown'}, volume=${audio.volume}`);
-    });
-
-    audio.onended = () => {
-      console.log('🔚 HTML5 Audio ended');
-      isPlayingRef.current = false;
-      currentAudioRef.current = null;
-      setTimeout(playNext, 50);
-    };
-
-    audio.onerror = (error) => {
-      console.error('❌ HTML5 Audio error:', error);
-      isPlayingRef.current = false;
-      currentAudioRef.current = null;
-      setTimeout(playNext, 50);
-    };
-
-    audio.play().catch(error => {
-      console.error('❌ Failed to play HTML5 Audio:', error);
-      isPlayingRef.current = false;
-      currentAudioRef.current = null;
-      setTimeout(playNext, 50);
-    });
   };
 
-  // Simple function to add audio to queue
+  // Enhanced queue addition with better blob handling
   const addToQueue = (audioBlob, type = 'audio') => {
+    // Skip if interrupted
+    if (shouldInterruptRef.current) {
+      console.log('🚫 Skipping queue addition due to interruption');
+            return;
+          }
+          
     console.log(`🎵 Adding to queue: type=${type}, size=${audioBlob.size} bytes, mime=${audioBlob.type}`);
+    
+    // Create URL with proper cleanup tracking
     const url = URL.createObjectURL(audioBlob);
     urlsToCleanupRef.current.add(url);
     
-    audioQueueRef.current.push({ url, type });
+    audioQueueRef.current.push({ url, type, blob: audioBlob });
     
     if (!isPlayingRef.current) {
       playNext();
     }
   };
 
-  // Simple background music function
+  // Enhanced background music with quality settings
   const startBackgroundMusic = (path = '/ambient_morning') => {
     const musicUrl = backgroundMusicTracks[path];
     if (!musicUrl) {
       console.warn(`🎵 Unknown background music path: ${path}`);
-      return;
-    }
+        return;
+      }
 
     console.log(`🎵 Starting background music: ${path}`);
     
@@ -230,6 +300,10 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     backgroundMusicRef.current = new Audio(musicUrl);
     backgroundMusicRef.current.volume = backgroundMusicVolume;
     backgroundMusicRef.current.loop = true;
+    
+    // Set audio quality properties
+    backgroundMusicRef.current.preload = 'auto';
+    backgroundMusicRef.current.crossOrigin = 'anonymous';
 
     backgroundMusicRef.current.play().catch(error => {
       console.error('❌ Failed to start background music:', error);
@@ -246,57 +320,69 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     }
   };
 
-  // Simple speech detection
+  // Enhanced speech detection with better sensitivity
   const startSpeechDetection = (stream) => {
     try {
       if (!speechContextRef.current || speechContextRef.current.state === 'closed') {
-        speechContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        speechContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+          sampleRate: 48000,
+          latencyHint: 'interactive'
+        });
       }
       
       const sourceNode = speechContextRef.current.createMediaStreamSource(stream);
-      const processor = speechContextRef.current.createScriptProcessor(4096, 1, 1);
-      sourceNode.connect(processor);
-      processor.connect(speechContextRef.current.destination);
+      const analyser = speechContextRef.current.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.8;
       
-      processor.onaudioprocess = (evt) => {
-        const input = evt.inputBuffer.getChannelData(0);
-        let sum = 0;
-        for (let i = 0; i < input.length; i++) sum += Math.abs(input[i]);
-        const avg = sum / input.length;
+      sourceNode.connect(analyser);
+      
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      
+      const checkAudioLevel = () => {
+        if (speechContextRef.current?.state !== 'running') return;
         
-                if (avg > 0.1 && !isUserSpeakingRef.current) {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Calculate RMS for better speech detection
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sum / bufferLength);
+        
+        // Enhanced speech detection threshold
+        if (rms > 15 && !isUserSpeakingRef.current) { // Lowered threshold for better sensitivity
           isUserSpeakingRef.current = true;
-          console.log('🎤 User started speaking - stopping all audio');
-          stopAllAudio();
+          console.log('🎤 User started speaking - IMMEDIATE interruption');
+          executeImmediateInterruption();
           stopBackgroundMusic();
-        } else if (avg < 0.05 && isUserSpeakingRef.current) {
+        } else if (rms < 8 && isUserSpeakingRef.current) {
           isUserSpeakingRef.current = false;
           console.log('🤫 User stopped speaking');
+          // Reset interruption flag after a short delay
+          setTimeout(() => {
+            shouldInterruptRef.current = false;
+          }, 500);
         }
+        
+        requestAnimationFrame(checkAudioLevel);
       };
       
-      processorRef.current = processor;
+      checkAudioLevel();
       
     } catch (error) {
-      console.warn('Speech detection setup failed:', error);
+      console.warn('Enhanced speech detection setup failed:', error);
     }
   };
 
   const stopSpeechDetection = () => {
-    if (processorRef.current) {
-      try {
-        processorRef.current.disconnect();
-        processorRef.current = null;
-      } catch (error) {
-        console.warn('Error disconnecting processor:', error);
-      }
-    }
-    
     if (speechContextRef.current && speechContextRef.current.state !== 'closed') {
       try {
         speechContextRef.current.close();
         speechContextRef.current = null;
-      } catch (error) {
+    } catch (error) {
         console.warn('Error closing speech context:', error);
       }
     }
@@ -304,19 +390,25 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     isUserSpeakingRef.current = false;
   };
 
+  // Enhanced base64 conversion with PCM/WAV detection
   const base64ToBlob = (base64, mime = 'audio/webm;codecs=opus') => {
     try {
       const base64Data = base64.replace(/^data:audio\/[^;]+;base64,/, '');
       const byteCharacters = atob(base64Data);
       const byteNumbers = new Array(byteCharacters.length);
-      
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
-      
       const byteArray = new Uint8Array(byteNumbers);
+
+      // PCM detection: If mime is PCM or unknown, wrap as WAV
+      if (mime === 'audio/pcm' || mime === 'audio/raw' || mime === 'audio/L16' || mime === 'audio/x-pcm' || mime === 'audio/basic' || mime === 'audio/linear' || mime === 'audio/l16' || mime === 'audio/linear16' || mime === 'audio/linear16le' || mime === 'audio/linear16be' || mime === 'audio/linear8' || mime === 'audio/linear8le' || mime === 'audio/linear8be' || mime === 'audio/pcm;bit=16;rate=16000' || mime === 'audio/pcm;bit=16;rate=8000' || mime === 'audio/pcm;bit=16;rate=44100' || mime === 'audio/pcm;bit=16;rate=48000' || mime === 'audio/pcm;bit=16;rate=22050' || mime === 'audio/pcm;bit=16;rate=11025' || mime === 'audio/pcm;bit=8;rate=16000' || mime === 'audio/pcm;bit=8;rate=8000' || mime === 'audio/pcm;bit=8;rate=44100' || mime === 'audio/pcm;bit=8;rate=48000' || mime === 'audio/pcm;bit=8;rate=22050' || mime === 'audio/pcm;bit=8;rate=11025' || mime === 'audio/pcm;bit=8;rate=8000' || mime === 'audio/pcm;bit=8;rate=16000' || mime === 'audio/pcm;bit=8;rate=44100' || mime === 'audio/pcm;bit=8;rate=48000' || mime === 'audio/pcm;bit=8;rate=22050' || mime === 'audio/pcm;bit=8;rate=11025' || mime === 'audio/pcm' || mime === 'audio/x-wav' || mime === 'audio/wav' || mime === 'audio/wave' || mime === 'audio/x-pn-wav' || mime === 'audio/x-pcm' || mime === 'audio/x-raw' || mime === 'audio/x-linear' || mime === 'audio/x-linear16' || mime === 'audio/x-linear8' || mime === 'audio/x-linear16le' || mime === 'audio/x-linear16be' || mime === 'audio/x-linear8le' || mime === 'audio/x-linear8be' || mime === 'audio/x-basic' || mime === 'audio/x-l16' || mime === 'audio/x-linear16' || mime === 'audio/x-linear8' || mime === 'audio/x-linear16le' || mime === 'audio/x-linear16be' || mime === 'audio/x-linear8le' || mime === 'audio/x-linear8be') {
+        // Default to 16kHz, 16-bit, mono
+        return pcmToWav(byteArray, 16000, 1, 16);
+      }
+
+      // Otherwise, use the provided MIME type
       return new Blob([byteArray], { type: mime });
-      
     } catch (error) {
       console.error('Error converting base64 to blob:', error);
       return null;
@@ -337,19 +429,22 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   };
 
   const cleanup = () => {
-    console.log('🧹 Starting cleanup');
+    console.log('🧹 Starting enhanced cleanup');
+    
+    // Execute final interruption
+    executeImmediateInterruption();
     
     stopSpeechDetection();
     stopBackgroundMusic();
-    stopAllAudio();
     
-    // Close playback context
-    if (playbackContextRef.current && playbackContextRef.current.state !== 'closed') {
+    // Close audio context
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       try {
-        playbackContextRef.current.close();
-        playbackContextRef.current = null;
-    } catch (error) {
-        console.warn('Error closing playback context:', error);
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+        gainNodeRef.current = null;
+      } catch (error) {
+        console.warn('Error closing audio context:', error);
       }
     }
     
@@ -367,7 +462,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       mediaStreamRef.current.getTracks().forEach(track => {
         try {
           track.stop();
-    } catch (error) {
+        } catch (error) {
           console.warn('Error stopping track:', error);
         }
       });
@@ -378,18 +473,31 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       socketRef.current.close();
     }
     
-    console.log('✅ Cleanup completed');
+    // Reset all flags
+    shouldInterruptRef.current = false;
+    isPlayingRef.current = false;
+    isUserSpeakingRef.current = false;
+    
+    console.log('✅ Enhanced cleanup completed');
   };
 
   const acceptCall = async () => {
     try {
       setCallState(CALL_STATES.CONNECTING);
       
-      // Get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get microphone access with high quality settings
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          sampleRate: 48000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
       mediaStreamRef.current = stream;
 
-      // Start speech detection
+      // Start enhanced speech detection
       startSpeechDetection(stream);
 
       // Create WebSocket connection
@@ -411,30 +519,29 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         endCall();
       };
 
-      // Handle incoming messages
+      // Enhanced message handling
       socket.onmessage = async (event) => {
         try {
-          // Handle binary data (audio/media)
+          // Handle binary data (audio/media) - preserve original quality
           if (event.data instanceof Blob) {
-            // don't re-encode—use original blob with its real type
             addToQueue(event.data, 'audio');
             return;
           }
 
-          // Handle ArrayBuffer
+          // Handle ArrayBuffer - preserve original quality
           if (event.data instanceof ArrayBuffer) {
-            const audioBlob = new Blob([event.data]);
+            const audioBlob = new Blob([event.data], { type: 'audio/webm;codecs=opus' });
             addToQueue(audioBlob, 'audio');
-            return;
-          }
-
+              return;
+            }
+            
           // Handle JSON messages
           const data = JSON.parse(event.data);
 
-          // Handle interruption
+          // Handle interruption with immediate execution
           if (data.interrupt || data.type === "interruption") {
-            console.log('🚨 Received server interruption - stopping all audio');
-            stopAllAudio();
+            console.log('🚨 Server interruption received - executing immediate interruption');
+            executeImmediateInterruption();
             return;
           }
 
@@ -445,19 +552,20 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
             return;
           }
 
-          // Handle media metadata
+          // Handle media metadata with quality preservation
           if (data.media_meta) {
             const { type, id, tag, mediatype } = data.media_meta;
             
             if (data.data_b64) {
-              const mediaBlob = base64ToBlob(data.data_b64, mediatype);
+              // Preserve original MIME type for quality
+              const mediaBlob = base64ToBlob(data.data_b64, mediatype || 'audio/webm;codecs=opus');
               if (mediaBlob) {
-                const mediaUrl = URL.createObjectURL(mediaBlob);
+              const mediaUrl = URL.createObjectURL(mediaBlob);
                 urlsToCleanupRef.current.add(mediaUrl);
-                
+              
                 if (type === 'image') {
                   displayImage(mediaUrl, id, tag);
-                } else {
+              } else {
                   addToQueue(mediaBlob, type);
                 }
               }
@@ -465,9 +573,10 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
             return;
           }
 
-          // Handle audio chunks
+          // Handle audio chunks with quality preservation
           if (data.audio) {
             setIsLoading(true);
+            // Use proper MIME type for Hume audio
             const audioBlob = base64ToBlob(data.audio, 'audio/webm;codecs=opus');
             if (audioBlob) {
               addToQueue(audioBlob, 'audio');
@@ -481,9 +590,10 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         }
       };
 
-      // Set up media recorder
+      // Set up media recorder with high quality
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: "audio/webm;codecs=opus",
+        audioBitsPerSecond: 128000 // Higher bitrate for better quality
       });
       mediaRecorderRef.current = mediaRecorder;
 
@@ -500,7 +610,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         }
       };
 
-      mediaRecorder.start(1000);
+      mediaRecorder.start(100); // Smaller chunks for better real-time performance
       setCallState(CALL_STATES.ACTIVE);
 
     } catch (error) {
