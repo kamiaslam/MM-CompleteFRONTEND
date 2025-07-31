@@ -25,6 +25,11 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   const urlsToCleanupRef = useRef(new Set());
   const shouldInterruptRef = useRef(false); // New: interruption flag
   
+  // Real-time audio streaming for small chunks
+  const audioStreamQueue = useRef([]); // Queue for immediate playback
+  const isStreamingRef = useRef(false); // Track if we're currently streaming
+  const nextPlayTimeRef = useRef(0); // Precise timing for seamless transitions
+  
   // High-quality audio context management
   const audioContextRef = useRef(null);
   const currentAudioSourceRef = useRef(null);
@@ -45,59 +50,20 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   const isUserSpeakingRef = useRef(false);
   const speechContextRef = useRef(null);
   const processorRef = useRef(null);
+  const speechFramesRef = useRef(0); // Track consecutive speech frames
+  const silenceFramesRef = useRef(0); // Track consecutive silence frames
 
   useEffect(() => {
     setCallState(CALL_STATES.INCOMING);
     return () => cleanup();
   }, []);
 
-  // Utility: Convert PCM to WAV Blob
-  function pcmToWav(pcmData, sampleRate = 16000, numChannels = 1, bitDepth = 16) {
-    const bytesPerSample = bitDepth / 8;
-    const blockAlign = numChannels * bytesPerSample;
-    const byteRate = sampleRate * blockAlign;
-    const wavBuffer = new ArrayBuffer(44 + pcmData.length);
-    const view = new DataView(wavBuffer);
-
-    // RIFF identifier 'RIFF'
-    view.setUint32(0, 0x52494646, false);
-    // file length minus RIFF identifier length and file description length
-    view.setUint32(4, 36 + pcmData.length, true);
-    // RIFF type 'WAVE'
-    view.setUint32(8, 0x57415645, false);
-    // format chunk identifier 'fmt '
-    view.setUint32(12, 0x666d7420, false);
-    // format chunk length
-    view.setUint32(16, 16, true);
-    // sample format (raw)
-    view.setUint16(20, 1, true);
-    // channel count
-    view.setUint16(22, numChannels, true);
-    // sample rate
-    view.setUint32(24, sampleRate, true);
-    // byte rate (sample rate * block align)
-    view.setUint32(28, byteRate, true);
-    // block align (channel count * bytes per sample)
-    view.setUint16(32, blockAlign, true);
-    // bits per sample
-    view.setUint16(34, bitDepth, true);
-    // data chunk identifier 'data'
-    view.setUint32(36, 0x64617461, false);
-    // data chunk length
-    view.setUint32(40, pcmData.length, true);
-
-    // Write PCM samples
-    new Uint8Array(wavBuffer, 44).set(pcmData);
-
-    return new Blob([wavBuffer], { type: 'audio/wav; codecs=1' });
-  }
-
-  // Initialize high-quality audio context
+  // Initialize high-quality audio context with proper sample rate
   const initializeAudioContext = async () => {
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-        sampleRate: 16000, // Match PCM/WAV sample rate
-        latencyHint: 'interactive' // Low latency for real-time
+        sampleRate: 48000, // Match Hume's 48kHz output
+        latencyHint: 'interactive'
       });
       
       // Create gain node for volume control
@@ -116,6 +82,10 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     
     // Set interruption flag
     shouldInterruptRef.current = true;
+    
+    // Clear stream queue and reset timing
+    audioStreamQueue.current = [];
+    nextPlayTimeRef.current = 0;
     
     // Stop current AudioContext source immediately
     if (currentAudioSourceRef.current) {
@@ -197,7 +167,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         
         // Reset interruption flag and continue queue
         shouldInterruptRef.current = false;
-          setTimeout(playNext, 50);
+          setTimeout(playNext, 25);
       };
       
       // Start playback
@@ -212,7 +182,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     }
   };
 
-  // Enhanced queue processing with interruption checks
+  // Enhanced queue processing with proper MIME type handling
   const playNext = async () => {
     // Check interruption flag
     if (shouldInterruptRef.current) {
@@ -227,54 +197,55 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     const item = audioQueueRef.current.shift();
     if (!item) return;
 
-    console.log(`▶️ Playing: ${item.type}`);
+    console.log(`▶️ Playing: ${item.type}, format: ${item.mimeType}`);
     isPlayingRef.current = true;
 
     // Try high-quality AudioContext playback
     try {
       const response = await fetch(item.url);
-          
-          // Check interruption after fetch
+      
+      // Check interruption after fetch
       if (shouldInterruptRef.current) {
         console.log('🚫 Interruption detected after fetch, aborting');
         isPlayingRef.current = false;
-            return;
-          }
-          
+        return;
+      }
+      
       const audioBlob = await response.blob();
       
-      // Ensure we have the right MIME type for quality
+      // Use the stored MIME type from the queue item
       const properBlob = new Blob([audioBlob], { 
-        type: audioBlob.type || 'audio/webm;codecs=opus' 
+        type: item.mimeType || 'audio/wav' 
       });
       
       const success = await playAudioWithEnhancedQuality(properBlob);
       if (success) {
-            return;
-          }
+        return;
+      }
     } catch (error) {
-      console.warn('Enhanced audio failed, this should not happen with Hume:', error);
+      console.warn('Enhanced audio failed:', error);
       isPlayingRef.current = false;
       shouldInterruptRef.current = false;
-            setTimeout(playNext, 50);
+      setTimeout(playNext, 25);
     }
   };
 
-  // Enhanced queue addition with better blob handling
-  const addToQueue = (audioBlob, type = 'audio') => {
+  // Enhanced queue addition with proper MIME type tracking
+  const addToQueue = (audioBlob, type = 'audio', mimeType = 'audio/wav') => {
     // Skip if interrupted
     if (shouldInterruptRef.current) {
       console.log('🚫 Skipping queue addition due to interruption');
-            return;
-          }
-          
-    console.log(`🎵 Adding to queue: type=${type}, size=${audioBlob.size} bytes, mime=${audioBlob.type}`);
+      return;
+    }
+    
+    console.log(`🎵 Adding to queue: type=${type}, size=${audioBlob.size} bytes, mime=${mimeType}`);
     
     // Create URL with proper cleanup tracking
     const url = URL.createObjectURL(audioBlob);
     urlsToCleanupRef.current.add(url);
     
-    audioQueueRef.current.push({ url, type, blob: audioBlob });
+    // Store MIME type with the queue item
+    audioQueueRef.current.push({ url, type, blob: audioBlob, mimeType });
     
     if (!isPlayingRef.current) {
       playNext();
@@ -353,18 +324,34 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         const rms = Math.sqrt(sum / bufferLength);
         
         // Enhanced speech detection threshold
-        if (rms > 15 && !isUserSpeakingRef.current) { // Lowered threshold for better sensitivity
-          isUserSpeakingRef.current = true;
-          console.log('🎤 User started speaking - IMMEDIATE interruption');
-          executeImmediateInterruption();
-          stopBackgroundMusic();
-        } else if (rms < 8 && isUserSpeakingRef.current) {
-          isUserSpeakingRef.current = false;
-          console.log('🤫 User stopped speaking');
-          // Reset interruption flag after a short delay
-          setTimeout(() => {
-            shouldInterruptRef.current = false;
-          }, 500);
+        if (rms > 35 && !isUserSpeakingRef.current) { // Increased threshold from 15 to 35
+          speechFramesRef.current++;
+          silenceFramesRef.current = 0;
+          
+          // Require 5 consecutive speech frames to confirm speaking
+          if (speechFramesRef.current >= 5) {
+            isUserSpeakingRef.current = true;
+            console.log('🎤 User started speaking - IMMEDIATE interruption');
+            executeImmediateInterruption();
+            stopBackgroundMusic();
+          }
+        } else if (rms < 20 && isUserSpeakingRef.current) { // Increased threshold from 8 to 20
+          silenceFramesRef.current++;
+          speechFramesRef.current = 0;
+          
+          // Require 8 consecutive silence frames to confirm stopped speaking
+          if (silenceFramesRef.current >= 8) {
+            isUserSpeakingRef.current = false;
+            console.log('🤫 User stopped speaking');
+            // Reset interruption flag after a short delay
+            setTimeout(() => {
+              shouldInterruptRef.current = false;
+            }, 500);
+          }
+        } else {
+          // Reset counters if neither clear speech nor silence
+          speechFramesRef.current = 0;
+          silenceFramesRef.current = 0;
         }
         
         requestAnimationFrame(checkAudioLevel);
@@ -390,8 +377,8 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     isUserSpeakingRef.current = false;
   };
 
-  // Enhanced base64 conversion with PCM/WAV detection
-  const base64ToBlob = (base64, mime = 'audio/webm;codecs=opus') => {
+  // Simplified base64 conversion for WAV audio
+  const base64ToBlob = (base64, mime = 'audio/wav') => {
     try {
       const base64Data = base64.replace(/^data:audio\/[^;]+;base64,/, '');
       const byteCharacters = atob(base64Data);
@@ -401,13 +388,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       }
       const byteArray = new Uint8Array(byteNumbers);
 
-      // PCM detection: If mime is PCM or unknown, wrap as WAV
-      if (mime === 'audio/pcm' || mime === 'audio/raw' || mime === 'audio/L16' || mime === 'audio/x-pcm' || mime === 'audio/basic' || mime === 'audio/linear' || mime === 'audio/l16' || mime === 'audio/linear16' || mime === 'audio/linear16le' || mime === 'audio/linear16be' || mime === 'audio/linear8' || mime === 'audio/linear8le' || mime === 'audio/linear8be' || mime === 'audio/pcm;bit=16;rate=16000' || mime === 'audio/pcm;bit=16;rate=8000' || mime === 'audio/pcm;bit=16;rate=44100' || mime === 'audio/pcm;bit=16;rate=48000' || mime === 'audio/pcm;bit=16;rate=22050' || mime === 'audio/pcm;bit=16;rate=11025' || mime === 'audio/pcm;bit=8;rate=16000' || mime === 'audio/pcm;bit=8;rate=8000' || mime === 'audio/pcm;bit=8;rate=44100' || mime === 'audio/pcm;bit=8;rate=48000' || mime === 'audio/pcm;bit=8;rate=22050' || mime === 'audio/pcm;bit=8;rate=11025' || mime === 'audio/pcm;bit=8;rate=8000' || mime === 'audio/pcm;bit=8;rate=16000' || mime === 'audio/pcm;bit=8;rate=44100' || mime === 'audio/pcm;bit=8;rate=48000' || mime === 'audio/pcm;bit=8;rate=22050' || mime === 'audio/pcm;bit=8;rate=11025' || mime === 'audio/pcm' || mime === 'audio/x-wav' || mime === 'audio/wav' || mime === 'audio/wave' || mime === 'audio/x-pn-wav' || mime === 'audio/x-pcm' || mime === 'audio/x-raw' || mime === 'audio/x-linear' || mime === 'audio/x-linear16' || mime === 'audio/x-linear8' || mime === 'audio/x-linear16le' || mime === 'audio/x-linear16be' || mime === 'audio/x-linear8le' || mime === 'audio/x-linear8be' || mime === 'audio/x-basic' || mime === 'audio/x-l16' || mime === 'audio/x-linear16' || mime === 'audio/x-linear8' || mime === 'audio/x-linear16le' || mime === 'audio/x-linear16be' || mime === 'audio/x-linear8le' || mime === 'audio/x-linear8be') {
-        // Default to 16kHz, 16-bit, mono
-        return pcmToWav(byteArray, 16000, 1, 16);
-      }
-
-      // Otherwise, use the provided MIME type
+      // Create blob with the provided MIME type (WAV from Hume)
       return new Blob([byteArray], { type: mime });
     } catch (error) {
       console.error('Error converting base64 to blob:', error);
@@ -428,8 +409,77 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     }
   };
 
+  // Real-time audio streaming for immediate playback
+  const streamAudioChunk = async (audioBlob, mimeType = 'audio/wav') => {
+    try {
+      // Skip if interrupted
+      if (shouldInterruptRef.current) {
+        console.log('🚫 Skipping audio chunk due to interruption');
+        return;
+      }
+
+      await initializeAudioContext();
+      
+      // Decode the audio immediately
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+      
+      console.log(`🎵 Real-time chunk: duration=${audioBuffer.duration.toFixed(3)}s, size=${audioBlob.size} bytes`);
+      
+      // Check for interruption after decoding
+      if (shouldInterruptRef.current) {
+        console.log('🚫 Interruption detected after decoding, aborting playback');
+        return;
+      }
+      
+      // Initialize next play time if this is the first chunk
+      if (nextPlayTimeRef.current === 0) {
+        nextPlayTimeRef.current = audioContextRef.current.currentTime + 0.05; // 50ms buffer
+        console.log(`⏰ Started real-time stream at ${nextPlayTimeRef.current.toFixed(3)}s`);
+      }
+      
+      // Create buffer source
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(gainNodeRef.current);
+      
+      // Schedule for immediate playback
+      source.start(nextPlayTimeRef.current);
+      console.log(`▶️ Scheduled chunk at ${nextPlayTimeRef.current.toFixed(3)}s (duration: ${audioBuffer.duration.toFixed(3)}s)`);
+      
+      // Update next play time for seamless transition
+      nextPlayTimeRef.current += audioBuffer.duration;
+      
+      // Handle end event
+      source.onended = () => {
+        console.log('🔚 Chunk ended');
+        // Continue with next chunk if available
+        if (audioStreamQueue.current.length > 0 && !shouldInterruptRef.current) {
+          const nextChunk = audioStreamQueue.current.shift();
+          streamAudioChunk(nextChunk.blob, nextChunk.mimeType);
+        } else if (audioStreamQueue.current.length === 0) {
+          // Reset timing when stream ends
+          nextPlayTimeRef.current = 0;
+          console.log('⏰ Stream ended - reset timing');
+        }
+      };
+      
+      currentAudioSourceRef.current = source;
+      
+    } catch (error) {
+      console.error('❌ Real-time audio streaming failed:', error);
+    }
+  };
+
   const cleanup = () => {
     console.log('🧹 Starting enhanced cleanup');
+    
+    // Clear all audio queues and reset timing
+    audioQueueRef.current = [];
+    audioStreamQueue.current = [];
+    nextPlayTimeRef.current = 0;
+    isPlayingRef.current = false;
+    isStreamingRef.current = false;
     
     // Execute final interruption
     executeImmediateInterruption();
@@ -573,13 +623,32 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
             return;
           }
 
-          // Handle audio chunks with quality preservation
+          // Handle audio chunks with real-time streaming
           if (data.audio) {
             setIsLoading(true);
-            // Use proper MIME type for Hume audio
-            const audioBlob = base64ToBlob(data.audio, 'audio/webm;codecs=opus');
+            
+            // Use the audio_format from the server, or default to WAV
+            const audioFormat = data.audio_format || 'audio/wav';
+            console.log('📡 Received Audio Data:', {
+              dataLength: data.audio.length,
+              audioFormat: audioFormat,
+              chunksCombined: data.chunks_combined,
+              totalSize: data.total_size,
+              segmentType: data.segment_type,
+              hasAudio: !!data.audio
+            });
+            
+            const audioBlob = base64ToBlob(data.audio, audioFormat);
             if (audioBlob) {
-              addToQueue(audioBlob, 'audio');
+              // For real-time streaming, play immediately or queue for seamless transition
+              if (nextPlayTimeRef.current === 0) {
+                // First chunk - start streaming immediately
+                streamAudioChunk(audioBlob, audioFormat);
+              } else {
+                // Subsequent chunks - add to stream queue for seamless playback
+                audioStreamQueue.current.push({ blob: audioBlob, mimeType: audioFormat });
+                console.log(`📦 Queued chunk for streaming, queue size: ${audioStreamQueue.current.length}`);
+              }
             }
             setIsLoading(false);
             return;
