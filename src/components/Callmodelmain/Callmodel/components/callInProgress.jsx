@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { 
-  Box, Typography, IconButton, Grid, Card, CardMedia, CardContent 
+  Box, Typography, IconButton, Grid, Card, CardMedia, CardContent, Slider 
 } from '@mui/material';
-import { Mic, MicOff, Close, CallEnd } from '@mui/icons-material';
+import { Mic, MicOff, Close, CallEnd, VolumeUp } from '@mui/icons-material';
 import VoiceReactiveSpeaker from './neonVisulizer';
 import { fetchTemporaryMediaLinks } from '@/api/axiosApis/get';
 
@@ -13,7 +13,9 @@ const CallInProgress = ({
   mediaStream,
   isMicOn,
   toggleMic,
-  callId
+  callId,
+  backgroundVolume,
+  updateBackgroundVolume
 }) => {
   const [mediaLinks, setMediaLinks] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -125,6 +127,48 @@ const CallInProgress = ({
             <Typography mt={1} variant="caption" color={isMicOn ? 'primary.main' : 'text.secondary'}>
                 {isMicOn ? 'Live' : 'Muted'}
             </Typography>
+            
+            {/* Volume Control */}
+            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 120 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <VolumeUp sx={{ 
+                  fontSize: 16, 
+                  color: backgroundVolume > 0.5 ? 'primary.main' : 'text.secondary', 
+                  mr: 1,
+                  transition: 'color 0.2s ease'
+                }} />
+                <Typography variant="caption" color="text.secondary">
+                  Background Volume
+                </Typography>
+              </Box>
+              <Slider
+                value={backgroundVolume}
+                onChange={(event, newValue) => updateBackgroundVolume(newValue)}
+                min={0}
+                max={1}
+                step={0.01}
+                sx={{
+                  '& .MuiSlider-thumb': {
+                    width: 16,
+                    height: 16,
+                    backgroundColor: 'primary.main',
+                    transition: 'transform 0.1s ease',
+                    '&:hover': {
+                      transform: 'scale(1.2)',
+                    },
+                  },
+                  '& .MuiSlider-track': {
+                    backgroundColor: 'primary.main',
+                  },
+                  '& .MuiSlider-rail': {
+                    backgroundColor: 'grey.300',
+                  },
+                }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                {Math.round(backgroundVolume * 100)}%
+              </Typography>
+            </Box>
             </Box>
 
             {/* VoiceReactiveSpeaker */}
@@ -163,6 +207,48 @@ const CallInProgress = ({
             <Typography variant="caption" mt={1} color="error.main">
                 End Call
             </Typography>
+            
+            {/* Volume Control (Right Side) */}
+            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 120 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <VolumeUp sx={{ 
+                  fontSize: 16, 
+                  color: backgroundVolume > 0.5 ? 'error.main' : 'text.secondary', 
+                  mr: 1,
+                  transition: 'color 0.2s ease'
+                }} />
+                <Typography variant="caption" color="text.secondary">
+                  Voice Volume
+                </Typography>
+              </Box>
+              <Slider
+                value={backgroundVolume}
+                onChange={(event, newValue) => updateBackgroundVolume(newValue)}
+                min={0}
+                max={1}
+                step={0.01}
+                sx={{
+                  '& .MuiSlider-thumb': {
+                    width: 16,
+                    height: 16,
+                    backgroundColor: 'error.main',
+                    transition: 'transform 0.1s ease',
+                    '&:hover': {
+                      transform: 'scale(1.2)',
+                    },
+                  },
+                  '& .MuiSlider-track': {
+                    backgroundColor: 'error.main',
+                  },
+                  '& .MuiSlider-rail': {
+                    backgroundColor: 'grey.300',
+                  },
+                }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                {Math.round(backgroundVolume * 100)}%
+              </Typography>
+            </Box>
             </Box>
         </Box>
         </Box>

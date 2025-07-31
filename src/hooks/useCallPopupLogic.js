@@ -13,6 +13,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
   const [callState, setCallState] = useState(CALL_STATES.IDLE);
   const [isLoading, setIsLoading] = useState(false);
   const [isMicOn, setIsMicOn] = useState(true);
+  const [backgroundVolume, setBackgroundVolume] = useState(0.03); // User-controlled volume
   
   // WebSocket and Media Stream
   const socketRef = useRef(null);
@@ -37,7 +38,6 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
 
   // Background Music Management
   const backgroundMusicRef = useRef(null);
-  const backgroundMusicVolume = 0.03;
   const backgroundMusicTracks = {
     '/celebration': '/assets/backgroundMusic/ES_Celebration01.mp3',
     '/story_music': '/assets/backgroundMusic/ES_Frosted Dawn - Megan Wofford.mp3',
@@ -269,7 +269,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     }
 
     backgroundMusicRef.current = new Audio(musicUrl);
-    backgroundMusicRef.current.volume = backgroundMusicVolume;
+    backgroundMusicRef.current.volume = backgroundVolume; // Use user-controlled volume
     backgroundMusicRef.current.loop = true;
     
     // Set audio quality properties
@@ -278,6 +278,20 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
 
     backgroundMusicRef.current.play().catch(error => {
       console.error('❌ Failed to start background music:', error);
+    });
+  };
+
+  // Function to update background music volume
+  const updateBackgroundVolume = (newVolume) => {
+    setBackgroundVolume(newVolume);
+    if (backgroundMusicRef.current) {
+      backgroundMusicRef.current.volume = newVolume;
+      console.log(`🎵 Background music volume updated to: ${newVolume}`);
+    }
+    // Show toast notification for user feedback
+    toast.success(`Background volume set to ${Math.round(newVolume * 100)}%`, {
+      duration: 1000,
+      position: 'top-right',
     });
   };
 
@@ -726,6 +740,8 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
     mediaStream: mediaStreamRef.current,
     isMicOn,
     toggleMic,
+    backgroundVolume, // Add backgroundVolume to the return object
+    updateBackgroundVolume, // Add updateBackgroundVolume to the return object
   };
 };
 

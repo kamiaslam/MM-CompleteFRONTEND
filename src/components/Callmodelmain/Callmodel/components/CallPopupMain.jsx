@@ -17,7 +17,9 @@ const CallPopupMain = ({ Patient_id, callPreData, callId, onClose }) => {
     endCall,
     mediaStream,
     isMicOn,
-    toggleMic
+    toggleMic,
+    backgroundVolume,
+    updateBackgroundVolume
   } = useCallPopupLogic({ Patient_id, callPreData, callId, onClose, audioRef });
 
   return (
@@ -66,6 +68,8 @@ const CallPopupMain = ({ Patient_id, callPreData, callId, onClose }) => {
             isMicOn={isMicOn}           // 👈 pass down
             toggleMic={toggleMic}
             callId={callId}
+            backgroundVolume={backgroundVolume}
+            updateBackgroundVolume={updateBackgroundVolume}
           />
         )}
                   {/* <CallInProgress
