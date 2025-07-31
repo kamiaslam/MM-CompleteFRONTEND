@@ -167,7 +167,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         
         // Reset interruption flag and continue queue
         shouldInterruptRef.current = false;
-          setTimeout(playNext, 25);
+          setTimeout(playNext, 50);
       };
       
       // Start playback
@@ -226,7 +226,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
       console.warn('Enhanced audio failed:', error);
       isPlayingRef.current = false;
       shouldInterruptRef.current = false;
-      setTimeout(playNext, 25);
+      setTimeout(playNext, 50);
     }
   };
 
@@ -338,7 +338,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
         const rms = Math.sqrt(sum / bufferLength);
         
         // Enhanced speech detection threshold
-        if (rms > 35 && !isUserSpeakingRef.current) { // Increased threshold from 15 to 35
+        if (rms > 20 && !isUserSpeakingRef.current) { // Increased threshold from 15 to 35
           speechFramesRef.current++;
           silenceFramesRef.current = 0;
           
@@ -349,7 +349,7 @@ const useCallPopupLogic = ({ Patient_id, callPreData, callId, onClose, audioRef 
             executeImmediateInterruption();
             stopBackgroundMusic();
           }
-        } else if (rms < 20 && isUserSpeakingRef.current) { // Increased threshold from 8 to 20
+        } else if (rms < 10 && isUserSpeakingRef.current) { // Increased threshold from 8 to 20
           silenceFramesRef.current++;
           speechFramesRef.current = 0;
           
